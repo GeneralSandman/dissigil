@@ -4,6 +4,10 @@ import (
 	"fmt"
 	"mapreduce"
 	"os"
+	"log"
+	"strings"
+	"strconv"
+	"unicode"
 )
 
 //
@@ -15,6 +19,20 @@ import (
 //
 func mapF(filename string, contents string) []mapreduce.KeyValue {
 	// TODO: you have to write this function
+	//zhenhuli code
+	
+	splitF := func(c rune) bool {
+		return !unicode.IsLetter(c)
+	}
+
+	words := strings.FieldsFunc(contents, splitF)
+	kv_slice := make([]mapreduce.KeyValue, 0, len(words))
+	for _,word := range words {
+		kv_slice = append(kv_slice, mapreduce.KeyValue{word, "1"})
+	}
+
+	return kv_slice
+	//zhenhuli code
 }
 
 //
@@ -24,6 +42,22 @@ func mapF(filename string, contents string) []mapreduce.KeyValue {
 //
 func reduceF(key string, values []string) string {
 	// TODO: you also have to write this function
+	//zhenhuli code
+
+	var sum int
+
+	for _,str := range values {
+		i, err := strconv.Atoi(str)
+
+		if (err != nil) {
+			log.Fatal("convert string", str, " to int error")
+		}
+		sum += i
+
+	}
+	
+	return strconv.Itoa(sum)
+	//zhenhuli code
 }
 
 // Can be run in 3 ways:

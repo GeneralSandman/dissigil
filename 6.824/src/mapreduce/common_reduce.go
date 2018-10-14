@@ -3,6 +3,9 @@ package mapreduce
 import (
 	"fmt"
 	"log"
+	"os"
+	"encoding/json"
+	"sort"
 )
 
 // doReduce manages one reduce task: it reads the intermediate
@@ -61,6 +64,42 @@ func doReduce(
 		if (error != nil) {
 			log.Fatal("read intermediate file error:",fileName)
 		}
+
+		defer filePtr.Close()
+
+		decoder := json.NewDecoder(filePtr)
+		var keyvalueTmp KeyValue
+
+		for ; decoder.More() ; {
+			err := decoder.Decode(&keyvalueTmp)
+			if (err != nil) {
+				log.Fatal("decode intermediate file failed")
+			}
+			keyvalues_map[keyvalueTmp.Key] = append(keyvalues_map[keyvalueTmp.Key], keyvalueTmp.Value)
+		}
+
+
 	}
+
+	//sort the key in keyvalues_map
+	keys := make([]string, 0, len(keyvalues_map))
+	for k,_ := range keyvalues_map {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	//write to file in json formate
+	outFilePtr, err := os.Create(outFile)
+	if (err != nil) {
+		log.Fatal("write to file in json formate failed")
+	}
+	defer outFilePtr.Close()
+	encoder := json.NewEncoder(outFilePtr)
+
+	for _,k := range keys {
+		encoder.Encode(KeyValue{k, reduceF(k, keyvalues_map[k])})
+
+	}
+
 	//zhenhuli code
 }
