@@ -151,6 +151,7 @@ func (cfg *config) start1(i int) {
 	applyCh := make(chan ApplyMsg)
 	go func() {
 		for m := range applyCh {
+
 			err_msg := ""
 			if m.UseSnapshot {
 				// ignore the snapshot

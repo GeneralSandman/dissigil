@@ -20,8 +20,8 @@ package raft
 import "sync"
 import "labrpc"
 
-// import "bytes"
-// import "encoding/gob"
+import "bytes"
+import "encoding/gob"
 
 
 
@@ -37,6 +37,22 @@ type ApplyMsg struct {
 	Snapshot    []byte // ignore for lab2; only used in lab3
 }
 
+//zhenhuli code
+type Rlog struct {
+    term int
+    command interface{}
+}
+
+type Role int
+
+const (
+    Follower Role = iota
+    Candidate
+    Leader
+)
+
+//zhenhuli code
+
 //
 // A Go object implementing a single Raft peer.
 //
@@ -50,6 +66,29 @@ type Raft struct {
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
 
+    //zhenhuli code 
+    resetTimer chan struct{}
+    shutdownCh chan struct{}
+    electionTimer Timer
+    role Role
+
+    currentTerm int
+    votedFor int
+    logs []Rlog
+
+    commitIndex int
+    lastApplied int
+
+    nextIndex []int
+    matchIndex []int
+
+    snapshotIndex int
+
+    electionTimeOut int
+    heartbeatTime int
+
+    //zhenhuli code 
+
 }
 
 // return currentTerm and whether this server
@@ -59,6 +98,10 @@ func (rf *Raft) GetState() (int, bool) {
 	var term int
 	var isleader bool
 	// Your code here (2A).
+    //zhenhuli code
+    term = rf.currentTerm
+    isleader = (rf.role == Leader)
+    //zhenhuli code
 	return term, isleader
 }
 
@@ -76,6 +119,19 @@ func (rf *Raft) persist() {
 	// e.Encode(rf.yyy)
 	// data := w.Bytes()
 	// rf.persister.SaveRaftState(data)
+
+    //zhenhuli code
+    buffer := new(bytes.Buffer)
+    encoder := gob.NewEncoder(buffer)
+    encoder.Encode(rf.role)
+    encoder.Encode(rf.currentTerm)
+    encoder.Encode(rf.votedFor)
+    encoder.Encode(rf.logs)
+    encoder.Encode(rf.commitIndex)
+    encoder.Encode(rf.lastApplied)
+    data := buffer.Bytes()
+    rf.persister.SaveRaftState(data)
+    //zhenhuli code
 }
 
 //
@@ -91,6 +147,16 @@ func (rf *Raft) readPersist(data []byte) {
 	if data == nil || len(data) < 1 { // bootstrap without any state?
 		return
 	}
+    //zhenhuli code
+    buffer := bytes.NewBuffer(data)
+    decoder := gob.NewDecoder(buffer)
+    decoder.Decode(&rf.role)
+    decoder.Decode(&rf.currentTerm)
+    decoder.Decode(&rf.votedFor)
+    decoder.Decode(&rf.logs)
+    decoder.Decode(&rf.commitIndex)
+    decoder.Decode(&rf.lastApplied)
+    //zhenhuli code
 }
 
 
@@ -102,7 +168,35 @@ func (rf *Raft) readPersist(data []byte) {
 //
 type RequestVoteArgs struct {
 	// Your data here (2A, 2B).
+    //zhenhuli code
+    Term int
+    CandidateId int
+    LastLogIndex int
+    LastLogTerm int
+    //zhenhuli code
 }
+
+//zhenhuli code
+func (rf *Raft) getLastLogIndexAndTerm() (int, int) {
+    index := snapshotIndex + len(rf.logs) - 1;
+    term := rf.logs[len(rf.logs) - 1].term;
+    return index, term
+}
+
+func (rf *Raft) fillRequestVoteArgs(args *RequestVoteArgs) {
+    rf.mu.Lock()
+    defer rf.mu.Unlock()
+
+    rf.role = Candidate
+    
+    rf.currentTerm += 1
+    rf.votedFor = rf.me
+    
+    args.Term = rf.currentTerm
+    args.CandidateId = rf.me
+    args.LastLogIndex, args.LastLogTerm = rf.getLastLogIndexAndTerm()
+}
+//zhenhuli code
 
 //
 // example RequestVote RPC reply structure.
@@ -110,6 +204,10 @@ type RequestVoteArgs struct {
 //
 type RequestVoteReply struct {
 	// Your data here (2A).
+    //zhenhuli code
+    Term int
+    VoteGranted bool
+    //zhenhuli code
 }
 
 //
@@ -117,6 +215,29 @@ type RequestVoteReply struct {
 //
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
+    //zhenhuli code
+    lastLogIndex, lastLogTerm = rf.getLastLogIndexAndTerm()
+    if args.Term < rf.currentTerm {
+
+    } else if args.Term > rf.currentTerm {
+        rf.role = Follower
+        rf.currentTerm = args.Term
+        rf.votedFor = args.CandidateId
+
+        if lastLogTerm > args.LastLogTerm ||
+            (lastLogTerm == args.LastLogTerm && 
+            lastLogIndex >= args.LastLogIndex) {
+                reply.Term = arg.Term
+                reply.VoteGranted = true
+
+                rf.resetTimer <- struct{}{}
+            }
+
+    } else {
+
+    }
+    rf.persist()
+    //zhenhuli code
 }
 
 //
@@ -173,10 +294,50 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	isLeader := true
 
 	// Your code here (2B).
+    //zhenhuli code
+
+
+    //zhenhuli code
 
 
 	return index, term, isLeader
 }
+//zhenhuli code
+func (rf *Raft) heartbeatRoutine() {
+    for {
+        _, isLeader := rf.GetState()
+        if !isLeader {
+            fmt.Printf("not leader:no need to send heartbeat")
+            return
+        }
+    }
+
+}
+
+func (rf *Raft) electionRoutine() {
+    for {
+        select {
+        case <- resetTimer :
+            fmt.Printf("resetTimer")
+            return
+
+        case <- shutdownCh :
+            fmt.Printf("shutdown\n")
+            return
+
+        case <- electionTimer.C:
+            fmt.Printf("I have become a condidate\n")
+            electionTimer.Reset(rf.electionTimeOut)
+
+        }
+    }
+}
+
+func (rf *Raft) apply() {
+
+}
+
+//zhenhuli code
 
 //
 // the tester calls Kill() when a Raft instance won't
@@ -207,6 +368,29 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.me = me
 
 	// Your initialization code here (2A, 2B, 2C).
+    //zhenhuli code
+    rf.restTimer = make(chan struct{})
+    rf.shutdownCh = make(chan struct{})
+    rf.role = Follower
+    
+    rf.currentTerm = applyCh.Index
+    rf.votedFor = -1
+    
+    rf.logs = make([]Rlog, 1)
+
+    rf.logs[0] = Rlog{
+        command : nil,
+        term : 0,
+    }
+
+    rf.nextIndex = make([]int, 1)
+    rf.matchIndex = make([]int, 1)
+
+    rf.electionTimeOut = time.Millisecond * (400 + rand.Intn(400))
+    rf.electionTimer = time.NewTimer(rf.electionTimeOut)
+    rf.heartbeatTime = time.Millisecond * 40
+
+    //zhenhuli code
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
